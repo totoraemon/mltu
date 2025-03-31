@@ -1,3 +1,7 @@
+# For this to work you need to install mltu version 1.2.5 or lower
+import mltu
+assert mltu.__version__ == "1.2.5", "mltu version must be 1.2.5 or lower"
+
 import os
 import tarfile
 import pandas as pd

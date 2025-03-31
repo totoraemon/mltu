@@ -1,3 +1,21 @@
+## [2.0.0.dev1] - 2025-03-31
+### Added
+- New `use_cache` parameter in the handwriting recognition tutorial
+- Type annotations and metadata handling in various callbacks and preprocessors
+- Added .devcointainer configuration for VSCode, enabling a consistent Docker development environment
+
+### Changed
+- Version bump from 1.2.5 to 2.0.0 (updating mltu compatibility with TensorFlow 2.19)
+- `.gitignore` updated to include `venv*`
+- Tutorials now assert `mltu` must be version 1.2.5 or lower for backward compatibility
+- Training configs updated (e.g., batch size from 16 to 128)
+- Code transitioned from `tf.keras` to core `keras` modules
+- Data providers updated with multiprocessing and other kwargs
+- Various logging, import handling, and minor bug fixes throughout the codebase
+
+### TODO
+- Remove `# pyright: ignore` comments, that temporarily suppress type checking errors
+
 ## [1.2.5] - 2024-05-04
 ### Added
 - Added exception in `mltu.dataProvider.DataProvider` to raise ValueError when dataset is not iterable

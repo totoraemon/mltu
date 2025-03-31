@@ -13,7 +13,7 @@ import queue
 
 
 class ThreadExecutor:
-    def __init__(self, target: typing.Callable, workers: int = os.cpu_count()) -> None:
+    def __init__(self, target: typing.Callable, workers: int=os.cpu_count() or 1) -> None:
         self.target = target
         self.workers = workers
         
@@ -87,7 +87,7 @@ class Worker:
 
 
 class ProcessExecutor:
-    def __init__(self, target: typing.Callable, workers: int = os.cpu_count()) -> None:
+    def __init__(self, target: typing.Callable, workers: int=os.cpu_count() or 1) -> None:
         self.target = target
         self.workers = workers
         self.busy = False
@@ -110,7 +110,7 @@ class ProcessExecutor:
             for index, data_batch in enumerate(data):
                 for worker in self.mp_workers:
                     if worker.busy == False and results[index] is None:
-                        results[index] = worker.send(data_batch)
+                        results[index] = worker.send(data_batch) # pyright: ignore
                         break
 
             # receive data from workers
@@ -130,24 +130,23 @@ class ProcessExecutor:
         self.busy = False
         return results
 
-
 class DataProvider(BaseDataProvider):
     """ DataProvider for PyTorch with multiprocessing and multithreading support.
     """
     def __init__(
             self, 
             dataset: typing.Union[str, list, pd.DataFrame],
-            data_preprocessors: typing.List[typing.Callable] = None,
+            data_preprocessors: typing.Optional[typing.List[typing.Callable]] = None,
             batch_size: int = 4,
             shuffle: bool = True,
             initial_epoch: int = 1,
-            augmentors: typing.List[Augmentor] = None,
-            transformers: typing.List[Transformer] = None,
-            batch_postprocessors: typing.List[typing.Callable] = None,
+            augmentors: typing.Optional[typing.List[Augmentor]] = None,
+            transformers: typing.Optional[typing.List[Transformer]] = None,
+            batch_postprocessors: typing.Optional[typing.List[typing.Callable]] = None,
             skip_validation: bool = True,
-            limit: int = None,
+            limit: typing.Union[int, None] = None,
             use_cache: bool = False,
-            workers: int = os.cpu_count(),
+            workers: int = os.cpu_count() or 1,
             use_multiprocessing: bool = False,
             max_queue_size: int = 5,
             **kwargs

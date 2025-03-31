@@ -1,9 +1,8 @@
-PyYAML>=6.0
-tqdm
+PyYAML==6.0.2
+tqdm==4.67.1
 qqdm==0.0.7
-pandas
-numpy
-opencv-python
-Pillow>=9.4.0
-onnxruntime>=1.15.0  # onnxruntime-gpu for GPU support
-matplotlib
+pandas==2.2.3
+numpy==2.1.3
+opencv-python==4.11.0.86
+pillow==11.1.0
+onnxruntime==1.21.0  # onnxruntime-gpu for GPU support

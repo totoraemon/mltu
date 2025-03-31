@@ -15,18 +15,19 @@ class DataProvider:
     def __init__(
             self,
             dataset: typing.Union[str, list, pd.DataFrame],
-            data_preprocessors: typing.List[typing.Callable] = None,
+            data_preprocessors: typing.Union[typing.List[typing.Callable], None] = None,
             batch_size: int = 4,
             shuffle: bool = True,
             initial_epoch: int = 1,
-            augmentors: typing.List[Augmentor] = None,
-            transformers: typing.List[Transformer] = None,
-            batch_postprocessors: typing.List[typing.Callable] = None,
+            augmentors: typing.Union[typing.List[Augmentor], None] = None,
+            transformers: typing.Union[typing.List[Transformer], None] = None,
+            batch_postprocessors: typing.Union[typing.List[typing.Callable], None] = None,
             skip_validation: bool = True,
-            limit: int = None,
+            limit: typing.Union[int, None]=None,
             use_cache: bool = False,
             log_level: int = logging.INFO,
             numpy: bool = True,
+            **kwargs
     ) -> None:
         """ Standardised object for providing data to a model while training.
 
@@ -137,7 +138,7 @@ class DataProvider:
         # Remove any samples that were marked for removal
         for remove in self._on_epoch_end_remove:
             self.logger.warning(f"Removing {remove} from dataset.")
-            self._dataset.remove(remove)
+            self._dataset.remove(remove) # pyright: ignore
         self._on_epoch_end_remove = []
 
     def validate_list_dataset(self, dataset: list) -> list:
@@ -148,7 +149,7 @@ class DataProvider:
 
         return validated_data
 
-    def validate(self, dataset: typing.Union[str, list, pd.DataFrame]) -> typing.Union[list, str]:
+    def validate(self, dataset: typing.Union[str, list, pd.DataFrame]) -> typing.Union[list, str]: # pyright: ignore
         """ Validate the dataset and return the dataset """
 
         if isinstance(dataset, str):

@@ -4,6 +4,10 @@ except: pass
 
 from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, TensorBoard
 
+# For this to work you need to install mltu version 1.2.5 or lower
+import mltu
+assert mltu.__version__ == "1.2.5", "mltu version must be 1.2.5 or lower"
+
 from mltu.preprocessors import ImageReader
 from mltu.transformers import ImageResizer, LabelIndexer, LabelPadding, ImageShowCV2
 from mltu.augmentors import RandomBrightness, RandomRotate, RandomErodeDilate, RandomSharpen
@@ -88,6 +92,7 @@ data_provider = DataProvider(
         LabelIndexer(configs.vocab),
         LabelPadding(max_word_length=configs.max_text_length, padding_value=len(configs.vocab)),
         ],
+        use_cache=True
 )
 
 # Split the dataset into training and validation sets

@@ -1,7 +1,7 @@
+import keras
 import tensorflow as tf
 
-
-class MaskedLoss(tf.keras.losses.Loss):
+class MaskedLoss(keras.losses.Loss):
     """ Masked loss function for Transformer.
 
     Args:
@@ -12,7 +12,7 @@ class MaskedLoss(tf.keras.losses.Loss):
         super(MaskedLoss, self).__init__()
         self.mask_value = mask_value
         self.reduction = reduction
-        self.loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=reduction)
+        self.loss_object = keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=reduction)
 
     def __call__(self, y_true: tf.Tensor, y_pred: tf.Tensor, sample_weight=None) -> tf.Tensor:
         """ Calculate masked loss.
@@ -28,13 +28,13 @@ class MaskedLoss(tf.keras.losses.Loss):
         loss = self.loss_object(y_true, y_pred)
 
         mask = tf.cast(mask, dtype=loss.dtype)
-        loss *= mask
+        loss *= mask # pyright: ignore
 
         loss = tf.reduce_sum(loss) / tf.reduce_sum(mask)
         return loss
 
 
-class MaskedAccuracy(tf.keras.metrics.Metric):
+class MaskedAccuracy(keras.metrics.Metric):
     """ Masked accuracy metric for Transformer.
 
     Args:
@@ -48,12 +48,13 @@ class MaskedAccuracy(tf.keras.metrics.Metric):
         self.count = self.add_weight(name='count', initializer='zeros')
 
     @tf.function
-    def update_state(self, y_true: tf.Tensor, y_pred: tf.Tensor, sample_weight=None):
+    def update_state(self, y_true: tf.Tensor, y_pred: tf.Tensor, sample_weight=None): # pyright: ignore
         """ Update state of the metric.
 
         Args:
             y_true (tf.Tensor): True labels.
             y_pred (tf.Tensor): Predicted labels.
+            sample_weight: (Optional) sample weights.
         """
         pred = tf.argmax(y_pred, axis=2)
         label = tf.cast(y_true, pred.dtype)
@@ -80,7 +81,7 @@ class MaskedAccuracy(tf.keras.metrics.Metric):
         return self.total / self.count
     
 
-class CERMetric(tf.keras.metrics.Metric):
+class CERMetric(keras.metrics.Metric):
     """A custom TensorFlow metric to compute the Character Error Rate (CER).
     
     Args:
@@ -116,8 +117,8 @@ class CERMetric(tf.keras.metrics.Metric):
         end_token_index = tf.argmax(equal_int, axis=1)
 
         # mask out everything after end token
-        new_range = tf.range(tf.shape(pred)[1], dtype=tf.int64)
-        range_matrix = tf.tile(new_range[None, :], [tf.shape(pred)[0], 1])
+        new_range = tf.range(tf.shape(pred)[1], dtype=tf.int64) # pyright: ignore
+        range_matrix = tf.tile(new_range[None, :], [tf.shape(pred)[0], 1]) # pyright: ignore
 
         mask = range_matrix <= tf.expand_dims(end_token_index, axis=1)
         masked_pred = tf.where(mask, pred, padding)
@@ -151,7 +152,7 @@ class CERMetric(tf.keras.metrics.Metric):
         self.cer_accumulator.assign_add(tf.reduce_sum(distance))
         
         # Increment the batch_counter by the batch size
-        self.batch_counter.assign_add(len(y_true))
+        self.batch_counter.assign_add(y_true.shape[0])
 
     def result(self):
         """ Computes and returns the metric result.

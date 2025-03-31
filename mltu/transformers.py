@@ -54,7 +54,7 @@ class ImageResizer(Transformer):
         width: int, 
         height: int, 
         keep_aspect_ratio: bool=False, 
-        padding_color: typing.Tuple[int]=(0, 0, 0)
+        padding_color: typing.Tuple[int, int, int]=(0, 0, 0)
         ) -> None:
         self._width = width
         self._height = height
@@ -77,7 +77,7 @@ class ImageResizer(Transformer):
         return original_image
 
     @staticmethod
-    def resize_maintaining_aspect_ratio(image: np.ndarray, width_target: int, height_target: int, padding_color: typing.Tuple[int]=(0, 0, 0)) -> np.ndarray:
+    def resize_maintaining_aspect_ratio(image: np.ndarray, width_target: int, height_target: int, padding_color: typing.Tuple[int, int, int]=(0, 0, 0)) -> np.ndarray:
         """ Resize image maintaining aspect ratio and pad with padding_color.
 
         Args:
@@ -132,7 +132,7 @@ class LabelIndexer(Transformer):
     """
     def __init__(
         self, 
-        vocab: typing.List[str]
+        vocab: typing.Union[str, typing.List[str]]
         ) -> None:
         self.vocab = vocab
 
@@ -150,7 +150,7 @@ class LabelPadding(Transformer):
     def __init__(
         self, 
         padding_value: int,
-        max_word_length: int = None, 
+        max_word_length: typing.Optional[int]=None, 
         use_on_batch: bool = False
         ) -> None:
         self.max_word_length = max_word_length
@@ -172,6 +172,8 @@ class LabelPadding(Transformer):
             return data, padded_labels
 
         label = label[:self.max_word_length]
+        if self.max_word_length is None:
+            raise ValueError("max_word_length must be specified.")
         return data, np.pad(label, (0, self.max_word_length - len(label)), "constant", constant_values=self.padding_value)
 
 
@@ -208,7 +210,7 @@ class SpectrogramPadding(Transformer):
     def __init__(
         self, 
         padding_value: int,
-        max_spectrogram_length: int = None, 
+        max_spectrogram_length: typing.Optional[int] = None, 
         use_on_batch: bool = False
         ) -> None:
         self.max_spectrogram_length = max_spectrogram_length
@@ -247,9 +249,9 @@ class AudioPadding(Transformer):
     def __call__(self, audio: Audio, label: typing.Any):
         # batched padding
         if self.use_on_batch:
-            max_len = max([len(a) for a in audio])
+            max_len = max([len(a) for a in audio]) # pyright: ignore
             padded_audios = []
-            for a in audio:
+            for a in audio: # pyright: ignore
                 # limit audio if it exceed max_audio_length
                 padded_audio = np.pad(a, (0, max_len - a.shape[0]), mode="constant", constant_values=self.padding_value)
                 padded_audios.append(padded_audio)

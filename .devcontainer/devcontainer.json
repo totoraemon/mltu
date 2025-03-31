@@ -1,0 +1,32 @@
+{
+    "name": "Python 3",
+    "context": "..",
+    "dockerFile": "Dockerfile",
+    
+    "remoteUser": "vscode",
+    
+    "customizations": {
+        "env": {
+            "PYTHONPATH": "/workspace:${PYTHONPATH}"
+        },
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "mhutchie.git-graph",
+                "vscode-icons-team.vscode-icons"
+            ]
+        }
+    },
+
+    // Add the following lines to enable GPU
+    "runArgs": [
+        "--gpus", "all"  // Explicitly target GPU 1
+    ],
+
+    // Ensures NVIDIA runtime is used
+    "hostRequirements": {
+        "gpu": true
+    }
+	// Uncomment the next line to run commands after the container is created.
+	// "postCreateCommand": "bash .devcontainer/setup.sh"
+}

@@ -52,7 +52,7 @@ class Audio:
     def __add__(self, other: np.ndarray) -> np.ndarray:
         self._audio = self._audio + other
         self.augmented = True
-        return self
+        return self # pyright: ignore
     
     def __len__(self) -> int:
         return len(self._audio)

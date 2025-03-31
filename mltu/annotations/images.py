@@ -9,6 +9,9 @@ import numpy as np
 
 from PIL import Image as PilImage
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 class Image(ABC):
     def __init__(self) -> None:
@@ -33,11 +36,11 @@ class Image(ABC):
         pass
 
     @abstractmethod
-    def update(self, image: np.ndarray):
+    def update(self, image: np.ndarray) -> "Image":
         pass
 
     @abstractmethod
-    def flip(self, axis: int = 0):
+    def flip(self, axis: int = 0) -> "Image":
         pass
 
     @abstractmethod
@@ -67,13 +70,12 @@ class CVImage(Image):
             method: int = cv2.IMREAD_COLOR,
             path: str = "",
             color: str = "BGR"
-    ) -> None:
+        ) -> None:
         super().__init__()
         
         if isinstance(image, str):
             if not os.path.exists(image):
                 raise FileNotFoundError(f"Image {image} not found.")
-
             self._image = cv2.imread(image, method)
             self.path = image
             self.color = "BGR"
@@ -130,7 +132,7 @@ class CVImage(Image):
         else:
             raise ValueError(f"Unknown color format {self.color}")
 
-    def update(self, image: np.ndarray):
+    def update(self, image: np.ndarray) -> "CVImage":
         if isinstance(image, np.ndarray):
             self._image = image
 
@@ -141,10 +143,9 @@ class CVImage(Image):
 
             return self
 
-        else:
-            raise TypeError(f"image must be numpy.ndarray, not {type(image)}")
+        raise TypeError(f"image must be numpy.ndarray, not {type(image)}")
 
-    def flip(self, axis: int = 0):
+    def flip(self, axis: int = 0) -> "CVImage":
         """ Flip image along x or y axis
 
         Args:
@@ -178,7 +179,8 @@ class PillowImage(Image):
 
     def __init__(
             self,
-            image: str) -> None:
+            image: typing.Union[str, np.ndarray],
+        ) -> None:
         super().__init__()
 
         if isinstance(image, str):
@@ -189,6 +191,8 @@ class PillowImage(Image):
             self._image = PilImage.open(image)
 
             self.init_successful = True
+        elif isinstance(image, np.ndarray):
+            raise NotImplementedError("PillowImage does not support numpy.ndarray as input")
         else:
             raise TypeError("Image must be a path to an image")
 
@@ -202,7 +206,7 @@ class PillowImage(Image):
 
     @property
     def is_animated(self) -> bool:
-        return hasattr(self._image, "is_animated") and self._image.is_animated
+        return isinstance(self._image, PilImage.Image) and getattr(self._image, "is_animated", False)
 
     @property
     def image(self) -> np.ndarray:
@@ -247,7 +251,7 @@ class PillowImage(Image):
         self.height = self.image.shape[0]
         self.channels = 1 if len(self.image.shape) == 2 else self.image.shape[2]
 
-    def update(self, image: PilImage.Image):
+    def update(self, image: np.ndarray) -> "PillowImage":
         if isinstance(image, PilImage.Image):
             self._image = image
         elif isinstance(image, np.ndarray):

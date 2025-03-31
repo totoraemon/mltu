@@ -1,17 +1,19 @@
 import os
+import typing
 import tensorflow as tf
-from pathlib import Path
-from keras.callbacks import Callback
+import keras
 
+from pathlib import Path
 import logging
 
-class Model2onnx(Callback):
+class Model2onnx(keras.callbacks.Callback):
     """ Converts the model to onnx format after training is finished. """
     def __init__(
         self, 
         saved_model_path: str, 
-        metadata: dict=None,
+        metadata: typing.Union[dict, None]=None,
         save_on_epoch_end: bool=False,
+        opset: typing.Union[int, None]=None
         ) -> None:
         """ Converts the model to onnx format after training is finished.
         Args:
@@ -23,6 +25,7 @@ class Model2onnx(Callback):
         self.saved_model_path = saved_model_path
         self.metadata = metadata
         self.save_on_epoch_end = save_on_epoch_end
+        self.opset = opset
 
         try:
             import tf2onnx
@@ -35,51 +38,48 @@ class Model2onnx(Callback):
             raise ImportError("onnx is not installed. Please install it using 'pip install onnx'")
 
     @staticmethod
-    def model2onnx(model: tf.keras.Model, onnx_model_path: str):
-        try:
-            import tf2onnx
+    def model2onnx(model: keras.Model, onnx_model_path: str, opset: typing.Union[int, None]=None):
+        import tf2onnx
 
-            # convert the model to onnx format
-            tf2onnx.convert.from_keras(model, output_path=onnx_model_path)
+        # Handle input signature where model has multiple inputs
+        input_signature = [tf.TensorSpec(shape=t.shape, dtype=t.dtype, name=t.name) for t in model.inputs] # pyright: ignore
 
-        except Exception as e:
-            print(e)
+        # convert the model to onnx format
+        model_proto, external_tensor_storage = tf2onnx.convert.from_keras(model, input_signature=input_signature, opset=opset, output_path=onnx_model_path)
+
+        return model_proto, external_tensor_storage
 
     @staticmethod
-    def include_metadata(onnx_model_path: str, metadata: dict=None):
-        try:
-            if metadata and isinstance(metadata, dict):
+    def include_metadata(onnx_model_path: str, metadata: typing.Union[dict, None]=None):
+        if metadata and isinstance(metadata, dict):
 
-                import onnx
-                # Load the ONNX model
-                onnx_model = onnx.load(onnx_model_path)
+            import onnx
+            # Load the ONNX model
+            onnx_model = onnx.load(onnx_model_path)
 
-                # Add the metadata dictionary to the model's metadata_props attribute
-                for key, value in metadata.items():
-                    meta = onnx_model.metadata_props.add()
-                    meta.key = key
-                    meta.value = str(value)
+            # Add the metadata dictionary to the model's metadata_props attribute
+            for key, value in metadata.items():
+                meta = onnx_model.metadata_props.add()
+                meta.key = key
+                meta.value = str(value)
 
-                # Save the modified ONNX model
-                onnx.save(onnx_model, onnx_model_path)
+            # Save the modified ONNX model
+            onnx.save(onnx_model, onnx_model_path)
 
-        except Exception as e:
-            print(e)  
-
-    def on_epoch_end(self, epoch: int, logs: dict=None):
+    def on_epoch_end(self, epoch: int, logs: typing.Union[dict, None]=None):
         """ Converts the model to onnx format on every epoch end. """
         if self.save_on_epoch_end:
             self.on_train_end(logs=logs)
 
-    def on_train_end(self, logs=None):
+    def on_train_end(self, logs: typing.Union[dict, None]=None):
         """ Converts the model to onnx format after training is finished. """
-        self.model.load_weights(self.saved_model_path)
+        self._model.load_weights(self.saved_model_path) # pyright: ignore
         onnx_model_path = str(Path(self.saved_model_path).with_suffix('.onnx'))
-        self.model2onnx(self.model, onnx_model_path)
+        self.model2onnx(self.model, onnx_model_path, self.opset) # pyright: ignore
         self.include_metadata(onnx_model_path, self.metadata)
 
 
-class TrainLogger(Callback):
+class TrainLogger(keras.callbacks.Callback):
     """Logs training metrics to a file.
     
     Args:
@@ -109,13 +109,14 @@ class TrainLogger(Callback):
 
         self.logger.addHandler(self.file_handler)
 
-    def on_epoch_end(self, epoch: int, logs: dict=None):
-        epoch_message = f"Epoch {epoch}; "
-        logs_message = "; ".join([f"{key}: {value}" for key, value in logs.items()])
-        self.logger.info(epoch_message + logs_message)
+    def on_epoch_end(self, epoch: int, logs: typing.Union[dict, None]=None):
+        if logs:
+            epoch_message = f"Epoch {epoch}; "
+            logs_message = "; ".join([f"{key}: {value}" for key, value in logs.items()])
+            self.logger.info(epoch_message + logs_message)
 
 
-class WarmupCosineDecay(Callback):
+class WarmupCosineDecay(keras.callbacks.Callback):
     """ Cosine decay learning rate scheduler with warmup
 
     Args:
@@ -142,28 +143,27 @@ class WarmupCosineDecay(Callback):
         self.decay_epochs = decay_epochs
         self.initial_lr = initial_lr
         self.verbose = verbose
+        self.model: keras.Model
 
-    def on_epoch_begin(self, epoch: int, logs: dict=None):
+    def on_epoch_begin(self, epoch: int, logs: typing.Union[dict, None]=None):
         """ Adjust learning rate at the beginning of each epoch """
 
         if epoch >= self.warmup_epochs + self.decay_epochs:
-            return logs
+            return
 
         if epoch < self.warmup_epochs:
             lr = self.initial_lr + (self.lr_after_warmup - self.initial_lr) * (epoch + 1) / self.warmup_epochs
         else:
             progress = (epoch - self.warmup_epochs) / self.decay_epochs
-            lr = self.final_lr + 0.5 * (self.lr_after_warmup - self.final_lr) * (1 + tf.cos(tf.constant(progress) * 3.14159))
+            lr = self.final_lr + 0.5 * (self.lr_after_warmup - self.final_lr) * (1 + tf.cos(tf.constant(progress) * 3.14159)) # pyright: ignore
 
-        tf.keras.backend.set_value(self.model.optimizer.lr, lr)
+        tf.keras.backend.set_value(self.model.optimizer.lr, lr) # pyright: ignore
         
         if self.verbose:
             print(f"Epoch {epoch + 1} - Learning Rate: {lr}")
     
-    def on_epoch_end(self, epoch: int, logs: dict=None):
+    def on_epoch_end(self, epoch: int, logs: typing.Union[dict, None]=None):
         logs = logs or {}
         
         # Log the learning rate value
         logs["lr"] = self.model.optimizer.lr
-        
-        return logs

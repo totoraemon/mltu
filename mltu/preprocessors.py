@@ -2,11 +2,9 @@ import os
 import typing
 import importlib
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib
 import logging
 
-from . import Image
+from . import Image, CVImage, PillowImage
 from mltu.annotations.audio import Audio
 
 """ Implemented Preprocessors:
@@ -18,12 +16,16 @@ from mltu.annotations.audio import Audio
 
 class ImageReader:
     """Read image from path and return image and label"""
-    def __init__(self, image_class: Image, log_level: int = logging.INFO, ) -> None:
+    def __init__(self, image_class: typing.Type[typing.Union[CVImage, PillowImage]] = CVImage, log_level: int = logging.INFO) -> None:
+        self._image_class = image_class
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.setLevel(log_level)
-        self._image_class = image_class
 
-    def __call__(self, image_path: typing.Union[str, np.ndarray], label: typing.Any) -> typing.Tuple[Image, typing.Any]:
+    def __call__(
+            self, 
+            image_path: typing.Union[str, np.ndarray, typing.Any], 
+            label: typing.Any
+        ) -> typing.Tuple[typing.Union[Image, None], typing.Any]:
         """ Read image from path and return image and label
         
         Args:
@@ -59,6 +61,7 @@ def import_librosa(object) -> None:
         try:
             object.librosa = importlib.import_module('librosa')
             print("librosa version:", object.librosa.__version__)
+            return object.librosa # pyright: ignore
         except:
             raise ImportError("librosa is required to augment Audio. Please install it with `pip install librosa`.")
 
@@ -71,7 +74,7 @@ class AudioReader:
     """
     def __init__(
             self, 
-            sample_rate = None,
+            sample_rate: int=22050,
             log_level: int = logging.INFO, 
         ) -> None:
         self.sample_rate = sample_rate
@@ -108,7 +111,7 @@ class AudioReader:
             audio = None
             self.logger.warning(f"Audio {audio_path} could not be read, returning None.")
 
-        return audio, label
+        return audio, label # pyright: ignore
     
 class WavReader:
     """Read wav file with librosa and return audio and label
@@ -130,6 +133,7 @@ class WavReader:
         self.frame_step = frame_step
         self.fft_length = fft_length
 
+        matplotlib = importlib.import_module('matplotlib')
         matplotlib.interactive(False)
         # import librosa using importlib
         import_librosa(self)
@@ -150,12 +154,12 @@ class WavReader:
         import_librosa(WavReader)
 
         # Load the wav file and store the audio data in the variable 'audio' and the sample rate in 'orig_sr'
-        audio, orig_sr = WavReader.librosa.load(wav_path) 
+        audio, orig_sr = WavReader.librosa.load(wav_path) # pyright: ignore
 
         # Compute the Short Time Fourier Transform (STFT) of the audio data and store it in the variable 'spectrogram'
         # The STFT is computed with a hop length of 'frame_step' samples, a window length of 'frame_length' samples, and 'fft_length' FFT components.
         # The resulting spectrogram is also transposed for convenience
-        spectrogram = WavReader.librosa.stft(audio, hop_length=frame_step, win_length=frame_length, n_fft=fft_length).T
+        spectrogram = WavReader.librosa.stft(audio, hop_length=frame_step, win_length=frame_length, n_fft=fft_length).T # pyright: ignore
 
         # Take the absolute value of the spectrogram to obtain the magnitude spectrum
         spectrogram = np.abs(spectrogram)
@@ -170,17 +174,18 @@ class WavReader:
         return spectrogram
 
     @staticmethod
-    def plot_raw_audio(wav_path: str, title: str = None, sr: int = 16000) -> None:
+    def plot_raw_audio(wav_path: str, title: str="Audio Plot", sr: int=16000) -> None: 
         """Plot the raw audio of a WAV file
 
         Args:
             wav_path (str): Path to the WAV file.
             sr (int, optional): Sample rate of the WAV file. Defaults to 16000.
-            title (str, optional): Title
+            title (str, optional): Title, defaults to "Audio Plot"
         """
+        plt = importlib.import_module('matplotlib.pyplot')
         import_librosa(WavReader)
         # Load the wav file and store the audio data in the variable 'audio' and the sample rate in 'orig_sr'
-        audio, orig_sr = WavReader.librosa.load(wav_path, sr=sr)
+        audio, orig_sr = WavReader.librosa.load(wav_path, sr=sr) # pyright: ignore
 
         duration = len(audio) / orig_sr
 
@@ -188,7 +193,7 @@ class WavReader:
 
         plt.figure(figsize=(15, 5))
         plt.plot(time, audio)
-        plt.title(title) if title else plt.title("Audio Plot")
+        plt.title(title)
         plt.ylabel("signal wave")
         plt.xlabel("time (s)")
         plt.tight_layout()
@@ -204,6 +209,8 @@ class WavReader:
             transpose (bool, optional): Transpose the spectrogram. Defaults to True.
             invert (bool, optional): Invert the spectrogram. Defaults to True.
         """
+        plt = importlib.import_module('matplotlib.pyplot')
+
         if transpose:
             spectrogram = spectrogram.T
         

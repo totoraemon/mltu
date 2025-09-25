@@ -1,0 +1,100 @@
+"""Minimal converter: Keras (.h5) -> ONNX using tf2onnx.
+
+Usage:
+  python convert.py path/to/model.h5 path/to/out.onnx [--opset N]
+
+This script intentionally avoids legacy keras2onnx.
+"""
+import sys
+from pathlib import Path
+
+
+def main(argv=None):
+    argv = argv or sys.argv[1:]
+    if len(argv) < 2:
+        print("Usage: python convert.py model.h5 out.onnx [--opset N]")
+        raise SystemExit(2)
+
+    h5_path = Path(argv[0])
+    out_onnx = Path(argv[1])
+    # parse optional flags (--opset N, --unsafe)
+    opset = 13
+    unsafe = False
+    if "--unsafe" in argv:
+        unsafe = True
+        # remove it so positions stay consistent
+        argv = [a for a in argv if a != "--unsafe"]
+
+    if len(argv) >= 4 and argv[2] == "--opset":
+        try:
+            opset = int(argv[3])
+        except Exception:
+            pass
+
+    if not h5_path.exists():
+        print(f"ERROR: {h5_path} not found")
+        raise SystemExit(2)
+
+    import tensorflow as tf
+
+    # If user passed --unsafe, enable Keras' unsafe deserialization (only for trusted models)
+    if unsafe:
+        print("WARNING: enabling unsafe deserialization for Keras. Only do this for trusted model files.")
+        try:
+            import keras
+            keras.config.enable_unsafe_deserialization()
+            print("Enabled unsafe deserialization via standalone keras.config")
+        except Exception:
+            try:
+                # try tensorflow.keras if available
+                if hasattr(tf.keras, "config"):
+                    tf.keras.config.enable_unsafe_deserialization()
+                    print("Enabled unsafe deserialization via tf.keras.config")
+            except Exception:
+                print("Could not enable unsafe deserialization programmatically. Will attempt to pass safe_mode=False to load_model.")
+
+    print(f"Loading Keras model from {h5_path} (compile=False, safe_mode={unsafe})")
+    # pass safe_mode=False when unsafe requested to allow lambda deserialization
+    if unsafe:
+        model = tf.keras.models.load_model(str(h5_path), compile=False, safe_mode=False)
+    else:
+        model = tf.keras.models.load_model(str(h5_path), compile=False)
+
+    try:
+        import tf2onnx
+        import onnx
+    except Exception as e:
+        print("Missing required packages for ONNX conversion:", e)
+        print("Install them with: pip install tf2onnx onnx")
+        raise
+
+    # Try converting directly from Keras model
+    try:
+        print(f"Converting model to ONNX using tf2onnx.from_keras (opset={opset})")
+        model_proto, _ = tf2onnx.convert.from_keras(model, opset=opset)
+        out_onnx.parent.mkdir(parents=True, exist_ok=True)
+        onnx.save(model_proto, str(out_onnx))
+        print("ONNX saved to", out_onnx)
+        return
+    except Exception as e:
+        print("Direct tf2onnx conversion failed:", e)
+
+    # Fallback: save SavedModel then convert
+    saved_dir = out_onnx.parent / (out_onnx.stem + "_saved_model")
+    print("Saving temporary SavedModel to", saved_dir)
+    tf.saved_model.save(model, str(saved_dir))
+
+    try:
+        print(f"Converting SavedModel to ONNX (opset={opset})")
+        model_proto, _ = tf2onnx.convert.from_saved_model(str(saved_dir), opset=opset)
+        out_onnx.parent.mkdir(parents=True, exist_ok=True)
+        onnx.save(model_proto, str(out_onnx))
+        print("ONNX saved to", out_onnx)
+        return
+    except Exception as e2:
+        print("SavedModel -> ONNX conversion failed:", e2)
+        raise
+
+
+if __name__ == '__main__':
+    main()

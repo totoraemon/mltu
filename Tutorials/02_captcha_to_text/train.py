@@ -21,6 +21,12 @@ import os
 from urllib.request import urlopen
 from io import BytesIO
 from zipfile import ZipFile
+import inspect
+import os as _os
+
+# When running a quick import/smoke test, set the environment variable
+# ML TU_SMOKE_TEST=1 (note: without space) to skip heavy dataset/model setup.
+SMOKE = _os.environ.get("MLTU_SMOKE_TEST", "0") == "1"
 
 
 def download_and_unzip(url, extract_to="Datasets"):
@@ -29,79 +35,97 @@ def download_and_unzip(url, extract_to="Datasets"):
     zipfile.extractall(path=extract_to)
 
 
-if not os.path.exists(os.path.join("Datasets", "captcha_images_v2")):
-    download_and_unzip("https://github.com/AakashKumarNain/CaptchaCracker/raw/master/captcha_images_v2.zip",
-                       extract_to="Datasets")
+if not SMOKE:
+    if not os.path.exists(os.path.join("Datasets", "captcha_images_v2")):
+        download_and_unzip("https://github.com/AakashKumarNain/CaptchaCracker/raw/master/captcha_images_v2.zip",
+                           extract_to="Datasets")
 
 # Create a list of all the images and labels in the dataset
-dataset, vocab, max_len = [], set(), 0
-captcha_path = os.path.join("Datasets", "captcha_images_v2")
-for file in os.listdir(captcha_path):
-    file_path = os.path.join(captcha_path, file)
-    label = os.path.splitext(file)[0] # Get the file name without the extension
-    dataset.append([file_path, label])
-    vocab.update(list(label))
-    max_len = max(max_len, len(label))
+if not SMOKE:
+    dataset, vocab, max_len = [], set(), 0
+    captcha_path = os.path.join("Datasets", "captcha_images_v2")
+    for file in os.listdir(captcha_path):
+        file_path = os.path.join(captcha_path, file)
+        label = os.path.splitext(file)[0] # Get the file name without the extension
+        dataset.append([file_path, label])
+        vocab.update(list(label))
+        max_len = max(max_len, len(label))
 
-configs = ModelConfigs()
+    configs = ModelConfigs()
 
-# Save vocab and maximum text length to configs
-configs.vocab = "".join(vocab)
-configs.max_text_length = max_len
-configs.save()
+    # Save vocab and maximum text length to configs
+    configs.vocab = "".join(vocab)
+    configs.max_text_length = max_len
+    configs.save()
 
-# Create a data provider for the dataset
-data_provider = DataProvider(
-    dataset=dataset,
-    skip_validation=True,
-    batch_size=configs.batch_size,
-    data_preprocessors=[ImageReader(CVImage)],
-    transformers=[
-        ImageResizer(configs.width, configs.height),
-        LabelIndexer(configs.vocab),
-        LabelPadding(max_word_length=configs.max_text_length, padding_value=len(configs.vocab))
-        ],
-)
-# Split the dataset into training and validation sets
-train_data_provider, val_data_provider = data_provider.split(split = 0.9)
+    # Create a data provider for the dataset
+    data_provider = DataProvider(
+        dataset=dataset,
+        skip_validation=True,
+        batch_size=configs.batch_size,
+        data_preprocessors=[ImageReader(CVImage)],
+        transformers=[
+            ImageResizer(configs.width, configs.height),
+            LabelIndexer(configs.vocab),
+            LabelPadding(max_word_length=configs.max_text_length, padding_value=len(configs.vocab))
+            ],
+    )
+    # Split the dataset into training and validation sets
+    train_data_provider, val_data_provider = data_provider.split(split = 0.9)
 
-# Augment training data with random brightness, rotation and erode/dilate
-train_data_provider.augmentors = [RandomBrightness(), RandomRotate(), RandomErodeDilate()]
+    # Augment training data with random brightness, rotation and erode/dilate
+    train_data_provider.augmentors = [RandomBrightness(), RandomRotate(), RandomErodeDilate()]
 
-# Creating TensorFlow model architecture
-model = train_model(
-    input_dim = (configs.height, configs.width, 3),
-    output_dim = len(configs.vocab),
-)
+    # Creating TensorFlow model architecture
+    model = train_model(
+        input_dim = (configs.height, configs.width, 3),
+        output_dim = len(configs.vocab),
+    )
 
-# Compile the model and print summary
-model.compile(
-    optimizer=tf.keras.optimizers.Adam(learning_rate=configs.learning_rate), 
-    loss=CTCloss(), 
-    metrics=[CWERMetric(padding_token=len(configs.vocab))],
-    run_eagerly=False
-)
-model.summary(line_length=110)
-# Define path to save the model
-os.makedirs(configs.model_path, exist_ok=True)
+    # Compile the model and print summary
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=configs.learning_rate), 
+        loss=CTCloss(), 
+        metrics=[CWERMetric(padding_token=len(configs.vocab))],
+        run_eagerly=False
+    )
+    model.summary(line_length=110)
+    # Define path to save the model
+    os.makedirs(configs.model_path, exist_ok=True)
 
-# Define callbacks
-earlystopper = EarlyStopping(monitor="val_CER", patience=50, verbose=1, mode="min")
-checkpoint = ModelCheckpoint(f"{configs.model_path}/model.h5", monitor="val_CER", verbose=1, save_best_only=True, mode="min")
-trainLogger = TrainLogger(configs.model_path)
-tb_callback = TensorBoard(f"{configs.model_path}/logs", update_freq=1)
-reduceLROnPlat = ReduceLROnPlateau(monitor="val_CER", factor=0.9, min_delta=1e-10, patience=20, verbose=1, mode="min")
-model2onnx = Model2onnx(f"{configs.model_path}/model.h5")
+    # Define callbacks
+    earlystopper = EarlyStopping(monitor="val_CER", patience=50, verbose=1, mode="min")
+    checkpoint = ModelCheckpoint(f"{configs.model_path}/model.h5", monitor="val_CER", verbose=1, save_best_only=True, mode="min")
+    trainLogger = TrainLogger(configs.model_path)
+    tb_callback = TensorBoard(f"{configs.model_path}/logs", update_freq=1)
+    reduceLROnPlat = ReduceLROnPlateau(monitor="val_CER", factor=0.9, min_delta=1e-10, patience=20, verbose=1, mode="min")
+    model2onnx = Model2onnx(f"{configs.model_path}/model.h5")
 
-# Train the model
-model.fit(
-    train_data_provider,
-    validation_data=val_data_provider,
-    epochs=configs.train_epochs,
-    callbacks=[earlystopper, checkpoint, trainLogger, reduceLROnPlat, tb_callback, model2onnx],
-    workers=configs.train_workers
-)
+    # Train the model
+    # Build fit kwargs and add `workers` / `use_multiprocessing` only when supported.
+    fit_kwargs = dict(
+        x=train_data_provider,
+        validation_data=val_data_provider,
+        epochs=configs.train_epochs,
+        callbacks=[earlystopper, checkpoint, trainLogger, reduceLROnPlat, tb_callback, model2onnx],
+    )
 
-# Save training and validation datasets as csv files
-train_data_provider.to_csv(os.path.join(configs.model_path, "train.csv"))
-val_data_provider.to_csv(os.path.join(configs.model_path, "val.csv"))
+    # Try to add multi-worker data loading options if a positive value is configured
+    train_workers = getattr(configs, "train_workers", None)
+    if isinstance(train_workers, int) and train_workers > 0:
+        try:
+            sig = inspect.signature(model.fit)
+            if "workers" in sig.parameters:
+                fit_kwargs["workers"] = train_workers
+            if "use_multiprocessing" in sig.parameters:
+                # enable multiprocessing only when the fit signature supports it
+                fit_kwargs["use_multiprocessing"] = True
+        except (ValueError, TypeError):
+            # If we cannot inspect the signature, silently skip adding those args
+            pass
+
+    model.fit(**fit_kwargs)
+
+    # Save training and validation datasets as csv files
+    train_data_provider.to_csv(os.path.join(configs.model_path, "train.csv"))
+    val_data_provider.to_csv(os.path.join(configs.model_path, "val.csv"))

@@ -37,11 +37,89 @@ class Model2onnx(Callback):
     def model2onnx(model: tf.keras.Model, onnx_model_path: str):
         try:
             import tf2onnx
+            import tempfile
+            import shutil
 
-            # convert the model to onnx format
-            tf2onnx.convert.from_keras(model, output_path=onnx_model_path)
+            # First try the simple conversion from keras model
+            try:
+                tf2onnx.convert.from_keras(model, output_path=onnx_model_path)
+                return
+            except Exception as e_from_keras:
+                # keep going to fallback
+                print("tf2onnx.from_keras failed, attempting fallback via SavedModel:", e_from_keras)
+
+            # Next fallback: try converting from a concrete tf.function (no disk save)
+            try:
+                # Build input signature from model.inputs
+                input_specs = []
+                for inp in model.inputs:
+                    # shape: (batch, ...). Use None for batch dimension
+                    shape = [None] + [None if d is None else int(d) for d in inp.shape.as_list()[1:]]
+                    input_specs.append(tf.TensorSpec(shape, inp.dtype))
+
+                f = tf.function(lambda *args: model(*args))
+                concrete = f.get_concrete_function(*input_specs)
+                tf2onnx.convert.from_function(concrete, output_path=onnx_model_path)
+                return
+            except Exception as e_from_function:
+                print("tf2onnx.from_function failed, attempting SavedModel fallback:", e_from_function)
+
+            # Final fallback: save the model as a TensorFlow SavedModel and convert from that
+            tmpdir = tempfile.mkdtemp(prefix="tf2onnx_tmp_")
+            try:
+                # Try the various ways to export a SavedModel depending on Keras/TF version
+                saved = False
+                # Preferred: Keras native export if available
+                try:
+                    if hasattr(model, 'export'):
+                        model.export(tmpdir)
+                        saved = True
+                except Exception:
+                    saved = False
+
+                if not saved:
+                    try:
+                        tf.saved_model.save(model, tmpdir)
+                        saved = True
+                    except Exception:
+                        saved = False
+
+                if not saved:
+                    try:
+                        # last resort: keras save_model with TF format
+                        tf.keras.models.save_model(model, tmpdir, include_optimizer=False, save_format='tf')
+                        saved = True
+                    except Exception as e_save:
+                        print('Failed to export SavedModel using known APIs:', e_save)
+
+                if not saved:
+                    raise RuntimeError('Unable to export model as SavedModel for tf2onnx fallback')
+
+                # Load the saved model and try to find a serving signature
+                loaded = tf.saved_model.load(tmpdir)
+                signature = None
+                try:
+                    sigs = getattr(loaded, 'signatures', None)
+                    if sigs and 'serving_default' in sigs:
+                        signature = sigs['serving_default']
+                except Exception:
+                    signature = None
+
+                if signature is not None:
+                    tf2onnx.convert.from_function(signature, output_path=onnx_model_path)
+                else:
+                    # As a last attempt, convert from a concrete function built from the original model
+                    f = tf.function(lambda *args: model(*args))
+                    concrete = f.get_concrete_function(*input_specs)
+                    tf2onnx.convert.from_function(concrete, output_path=onnx_model_path)
+            finally:
+                try:
+                    shutil.rmtree(tmpdir)
+                except Exception:
+                    pass
 
         except Exception as e:
+            # Print the exception so the callback doesn't silently fail
             print(e)
 
     @staticmethod
